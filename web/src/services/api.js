@@ -1,10 +1,10 @@
 import axios from 'axios';
 
 // API Base URL - SESUAIKAN DENGAN SETUP ANDA
-const API_BASE_URL = 'http://localhost:3000/api';
+// const API_BASE_URL = 'http://localhost:3000/api';
 
 // Untuk production:
-// const API_BASE_URL = 'https://your-api.com/api';
+const API_BASE_URL = 'https://book-production-2ebd.up.railway.app/api';
 
 const api = axios.create({
   baseURL: API_BASE_URL,
