@@ -21,7 +21,7 @@ const PORT = process.env.PORT || 3000;
 const allowedOrigins = [
   'http://localhost:3000',
   'http://localhost:3001',
-  'https://your-app.netlify.app', // Nanti diganti setelah deploy frontend
+  'https://keen-palmier-2ab5ea.netlify.app', // Nanti diganti setelah deploy frontend
 ];
 
 app.use(cors({
