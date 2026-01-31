@@ -1,122 +1,179 @@
 const express = require('express');
 const router = express.Router();
-const { dbHelpers } = require('../database');
+const { query, get, run } = require('../database');
+const { verifyToken, isAdmin } = require('../middleware/auth');
+
+// ============================================
+// PUBLIC ROUTES (No auth required)
+// ============================================
 
 // GET all books
 router.get('/', async (req, res) => {
   try {
-    const books = await dbHelpers.query(`
+    const books = await query(`
       SELECT b.*, 
-        (SELECT COUNT(*) FROM favorites WHERE bookId = b.id) as favoriteCount
+             COUNT(c.id) as totalChapters
       FROM books b
+      LEFT JOIN chapters c ON b.id = c.bookId
+      GROUP BY b.id
       ORDER BY b.createdAt DESC
     `);
+    
     res.json(books);
   } catch (error) {
-    res.status(500).json({ error: error.message });
+    console.error('Error fetching books:', error);
+    res.status(500).json({ error: 'Failed to fetch books' });
   }
 });
 
-// GET single book by ID
+// GET book by ID with chapters
 router.get('/:id', async (req, res) => {
   try {
-    const book = await dbHelpers.get(
-      'SELECT * FROM books WHERE id = ?',
-      [req.params.id]
-    );
+    const { id } = req.params;
+    
+    // Get book
+    const book = await get('SELECT * FROM books WHERE id = ?', [id]);
     
     if (!book) {
       return res.status(404).json({ error: 'Book not found' });
     }
-
-    // Get chapters for this book
-    const chapters = await dbHelpers.query(
+    
+    // Get chapters
+    const chapters = await query(
       'SELECT * FROM chapters WHERE bookId = ? ORDER BY chapterNumber',
-      [req.params.id]
+      [id]
     );
-
-    res.json({ ...book, chapters });
-  } catch (error) {
-    res.status(500).json({ error: error.message });
-  }
-});
-
-// POST create new book
-router.post('/', async (req, res) => {
-  try {
-    const { title, author, description, coverImage, category } = req.body;
     
-    if (!title || !author) {
-      return res.status(400).json({ error: 'Title and author are required' });
-    }
-
-    const result = await dbHelpers.run(
-      'INSERT INTO books (title, author, description, coverImage, category) VALUES (?, ?, ?, ?, ?)',
-      [title, author, description, coverImage, category]
-    );
-
-    const newBook = await dbHelpers.get(
-      'SELECT * FROM books WHERE id = ?',
-      [result.id]
-    );
-
-    res.status(201).json(newBook);
-  } catch (error) {
-    res.status(500).json({ error: error.message });
-  }
-});
-
-// PUT update book
-router.put('/:id', async (req, res) => {
-  try {
-    const { title, author, description, coverImage, category, totalChapters } = req.body;
+    book.chapters = chapters;
+    book.totalChapters = chapters.length;
     
-    await dbHelpers.run(
-      `UPDATE books 
-       SET title = ?, author = ?, description = ?, coverImage = ?, category = ?, totalChapters = ?
-       WHERE id = ?`,
-      [title, author, description, coverImage, category, totalChapters, req.params.id]
-    );
-
-    const updatedBook = await dbHelpers.get(
-      'SELECT * FROM books WHERE id = ?',
-      [req.params.id]
-    );
-
-    res.json(updatedBook);
+    res.json(book);
   } catch (error) {
-    res.status(500).json({ error: error.message });
-  }
-});
-
-// DELETE book
-router.delete('/:id', async (req, res) => {
-  try {
-    const result = await dbHelpers.run(
-      'DELETE FROM books WHERE id = ?',
-      [req.params.id]
-    );
-
-    if (result.changes === 0) {
-      return res.status(404).json({ error: 'Book not found' });
-    }
-
-    res.json({ message: 'Book deleted successfully' });
-  } catch (error) {
-    res.status(500).json({ error: error.message });
+    console.error('Error fetching book:', error);
+    res.status(500).json({ error: 'Failed to fetch book' });
   }
 });
 
 // GET books by category
 router.get('/category/:category', async (req, res) => {
   try {
-    const books = await dbHelpers.query(
-      'SELECT * FROM books WHERE category = ? ORDER BY createdAt DESC',
-      [req.params.category]
-    );
+    const { category } = req.params;
+    
+    const books = await query(`
+      SELECT b.*, 
+             COUNT(c.id) as totalChapters
+      FROM books b
+      LEFT JOIN chapters c ON b.id = c.bookId
+      WHERE b.category = ?
+      GROUP BY b.id
+      ORDER BY b.title
+    `, [category]);
+    
     res.json(books);
   } catch (error) {
-    res.status(500).json({ error: error.message });
+    console.error('Error fetching books by category:', error);
+    res.status(500).json({ error: 'Failed to fetch books' });
+  }
+});
+
+// ============================================
+// PROTECTED ROUTES (Require admin auth)
+// ============================================
+
+// POST create new book (PROTECTED)
+router.post('/', verifyToken, isAdmin, async (req, res) => {
+  try {
+    const { title, author, description, coverImage, category } = req.body;
+    
+    if (!title || !author) {
+      return res.status(400).json({ error: 'Title and author are required' });
+    }
+    
+    const result = await run(`
+      INSERT INTO books (title, author, description, coverImage, category)
+      VALUES (?, ?, ?, ?, ?)
+    `, [title, author, description || '', coverImage || '', category || '']);
+    
+    const newBook = await get('SELECT * FROM books WHERE id = ?', [result.id]);
+    
+    res.status(201).json(newBook);
+  } catch (error) {
+    console.error('Error creating book:', error);
+    res.status(500).json({ error: 'Failed to create book' });
+  }
+});
+
+// PUT update book (PROTECTED)
+router.put('/:id', verifyToken, isAdmin, async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { title, author, description, coverImage, category } = req.body;
+    
+    // Check if book exists
+    const existingBook = await get('SELECT * FROM books WHERE id = ?', [id]);
+    if (!existingBook) {
+      return res.status(404).json({ error: 'Book not found' });
+    }
+    
+    await run(`
+      UPDATE books 
+      SET title = ?, 
+          author = ?, 
+          description = ?, 
+          coverImage = ?, 
+          category = ?,
+          updatedAt = CURRENT_TIMESTAMP
+      WHERE id = ?
+    `, [
+      title || existingBook.title,
+      author || existingBook.author,
+      description !== undefined ? description : existingBook.description,
+      coverImage !== undefined ? coverImage : existingBook.coverImage,
+      category !== undefined ? category : existingBook.category,
+      id
+    ]);
+    
+    const updatedBook = await get('SELECT * FROM books WHERE id = ?', [id]);
+    
+    res.json(updatedBook);
+  } catch (error) {
+    console.error('Error updating book:', error);
+    res.status(500).json({ error: 'Failed to update book' });
+  }
+});
+
+// DELETE book (PROTECTED)
+router.delete('/:id', verifyToken, isAdmin, async (req, res) => {
+  try {
+    const { id } = req.params;
+    
+    // Check if book exists
+    const book = await get('SELECT * FROM books WHERE id = ?', [id]);
+    if (!book) {
+      return res.status(404).json({ error: 'Book not found' });
+    }
+    
+    // Delete PDF file if exists
+    if (book.pdfPath) {
+      try {
+        const fs = require('fs').promises;
+        await fs.unlink(book.pdfPath);
+        console.log(`Deleted book PDF: ${book.pdfPath}`);
+      } catch (err) {
+        console.error('Error deleting book PDF:', err);
+      }
+    }
+    
+    // Delete book (cascades to chapters, favorites, progress)
+    await run('DELETE FROM books WHERE id = ?', [id]);
+    
+    res.json({ 
+      message: 'Book deleted successfully',
+      deletedBook: book 
+    });
+  } catch (error) {
+    console.error('Error deleting book:', error);
+    res.status(500).json({ error: 'Failed to delete book' });
   }
 });
 

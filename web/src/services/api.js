@@ -1,11 +1,9 @@
 import axios from 'axios';
 
-// API Base URL - SESUAIKAN DENGAN SETUP ANDA
-// const API_BASE_URL = 'http://localhost:3000/api';
+// API Base URL
+const API_BASE_URL = process.env.REACT_APP_API_URL || 'https://book-production-2ebd.up.railway.app/api';
 
-// Untuk production:
-const API_BASE_URL = 'https://book-production-2ebd.up.railway.app/api';
-
+// Create axios instance
 const api = axios.create({
   baseURL: API_BASE_URL,
   timeout: 10000,
@@ -14,7 +12,34 @@ const api = axios.create({
   },
 });
 
-// Get device/browser ID
+// Add auth token to requests
+api.interceptors.request.use(
+  (config) => {
+    const token = localStorage.getItem('token');
+    if (token) {
+      config.headers.Authorization = `Bearer ${token}`;
+    }
+    return config;
+  },
+  (error) => {
+    return Promise.reject(error);
+  }
+);
+
+// Handle 401 errors (unauthorized)
+api.interceptors.response.use(
+  (response) => response,
+  (error) => {
+    if (error.response?.status === 401) {
+      // Token expired or invalid
+      localStorage.removeItem('token');
+      window.location.href = '/admin/login';
+    }
+    return Promise.reject(error);
+  }
+);
+
+// Get device ID
 export const getDeviceId = () => {
   let deviceId = localStorage.getItem('deviceId');
   if (!deviceId) {
@@ -24,7 +49,25 @@ export const getDeviceId = () => {
   return deviceId;
 };
 
-// Books API
+// ============================================
+// AUTH API
+// ============================================
+export const authAPI = {
+  login: (username, password) => 
+    api.post('/auth/login', { username, password }),
+  logout: () => 
+    api.post('/auth/logout'),
+  verify: () => 
+    api.get('/auth/verify'),
+  getMe: () => 
+    api.get('/auth/me'),
+  changePassword: (currentPassword, newPassword) =>
+    api.put('/auth/change-password', { currentPassword, newPassword }),
+};
+
+// ============================================
+// BOOKS API
+// ============================================
 export const booksAPI = {
   getAll: () => api.get('/books'),
   getById: (id) => api.get(`/books/${id}`),
@@ -34,7 +77,9 @@ export const booksAPI = {
   getByCategory: (category) => api.get(`/books/category/${category}`),
 };
 
-// Chapters API
+// ============================================
+// CHAPTERS API
+// ============================================
 export const chaptersAPI = {
   getByBookId: (bookId) => api.get(`/chapters/book/${bookId}`),
   getById: (id) => api.get(`/chapters/${id}`),
@@ -43,7 +88,31 @@ export const chaptersAPI = {
   delete: (id) => api.delete(`/chapters/${id}`),
 };
 
-// Favorites API
+// ============================================
+// UPLOAD API
+// ============================================
+export const uploadAPI = {
+  uploadBookPDF: (formData) => 
+    api.post('/upload/pdf', formData, {
+      headers: { 'Content-Type': 'multipart/form-data' },
+    }),
+  uploadChapterPDF: (formData) =>
+    api.post('/upload/chapter-pdf', formData, {
+      headers: { 'Content-Type': 'multipart/form-data' },
+    }),
+  getBookPDFUrl: (bookId) => 
+    `${API_BASE_URL}/upload/pdf/${bookId}`,
+  getChapterPDFUrl: (chapterId) =>
+    `${API_BASE_URL}/upload/chapter-pdf/${chapterId}`,
+  deleteBookPDF: (bookId) => 
+    api.delete(`/upload/pdf/${bookId}`),
+  deleteChapterPDF: (chapterId) =>
+    api.delete(`/upload/chapter-pdf/${chapterId}`),
+};
+
+// ============================================
+// FAVORITES API
+// ============================================
 export const favoritesAPI = {
   getAll: (deviceId) => api.get(`/favorites/${deviceId}`),
   checkFavorite: (deviceId, bookId) => api.get(`/favorites/${deviceId}/${bookId}`),
@@ -52,7 +121,9 @@ export const favoritesAPI = {
   removeById: (id) => api.delete(`/favorites/${id}`),
 };
 
-// Progress API
+// ============================================
+// PROGRESS API
+// ============================================
 export const progressAPI = {
   getAll: (deviceId) => api.get(`/progress/${deviceId}`),
   getByBook: (deviceId, bookId) => api.get(`/progress/${deviceId}/${bookId}`),
@@ -61,7 +132,9 @@ export const progressAPI = {
   delete: (id) => api.delete(`/progress/${id}`),
 };
 
-// Utility API
+// ============================================
+// UTILITY API
+// ============================================
 export const utilityAPI = {
   getCategories: () => api.get('/categories'),
   search: (query) => api.get('/search', { params: { q: query } }),

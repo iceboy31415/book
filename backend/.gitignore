@@ -1,5 +1,10 @@
 node_modules/
 *.db
 .env
+.env.local
+.env.production
 npm-debug.log
-.DS_Store
+uploads/pdfs/*
+!uploads/pdfs/.gitkeep
+uploads/covers/*
+!uploads/covers/.gitkeep

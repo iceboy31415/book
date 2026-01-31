@@ -1,10 +1,10 @@
 import React, { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import styled from '@emotion/styled';
-import { booksAPI, chaptersAPI } from '../services/api';
+import { booksAPI, chaptersAPI, uploadAPI } from '../services/api';
 import LoadingSpinner from '../components/LoadingSpinner';
 import { colors, spacing, fontSize, borderRadius, shadows } from '../styles/theme';
-import { FiArrowLeft, FiPlus, FiEdit2, FiTrash2 } from 'react-icons/fi';
+import { FiArrowLeft, FiPlus, FiEdit2, FiTrash2, FiUpload, FiFile, FiEye } from 'react-icons/fi';
 
 const Container = styled.div`
   max-width: 900px;
@@ -73,6 +73,7 @@ const AddButton = styled.button`
   font-weight: 600;
   cursor: pointer;
   transition: all 0.2s;
+  border: none;
 
   &:hover {
     background: ${colors.primaryDark};
@@ -126,19 +127,43 @@ const ChapterTitle = styled.h3`
   margin-bottom: ${spacing.xs};
 `;
 
+const ChapterMeta = styled.div`
+  display: flex;
+  gap: ${spacing.md};
+  align-items: center;
+  flex-wrap: wrap;
+`;
+
 const ReadTime = styled.p`
   font-size: ${fontSize.xs};
   color: ${colors.textLight};
 `;
 
+const PDFBadge = styled.span`
+  display: inline-flex;
+  align-items: center;
+  gap: ${spacing.xs};
+  background: ${colors.success}20;
+  color: ${colors.success};
+  padding: ${spacing.xs} ${spacing.sm};
+  border-radius: ${borderRadius.sm};
+  font-size: ${fontSize.xs};
+  font-weight: 600;
+
+  svg {
+    font-size: 12px;
+  }
+`;
+
 const ChapterActions = styled.div`
   display: flex;
   gap: ${spacing.sm};
+  flex-wrap: wrap;
 `;
 
 const ActionButton = styled.button`
-  background: ${props => props.danger ? colors.error + '10' : colors.background};
-  color: ${props => props.danger ? colors.error : colors.text};
+  background: ${props => props.danger ? colors.error + '10' : props.view ? colors.primary + '10' : colors.background};
+  color: ${props => props.danger ? colors.error : props.view ? colors.primary : colors.text};
   padding: ${spacing.sm} ${spacing.md};
   border-radius: ${borderRadius.md};
   font-size: ${fontSize.sm};
@@ -148,6 +173,7 @@ const ActionButton = styled.button`
   align-items: center;
   gap: ${spacing.xs};
   transition: all 0.2s;
+  border: none;
 
   &:hover {
     opacity: 0.8;
@@ -263,6 +289,45 @@ const TextArea = styled.textarea`
   }
 `;
 
+const FileInputWrapper = styled.div`
+  border: 2px dashed ${colors.border};
+  border-radius: ${borderRadius.md};
+  padding: ${spacing.lg};
+  text-align: center;
+  cursor: pointer;
+  transition: all 0.2s;
+
+  &:hover {
+    border-color: ${colors.primary};
+    background: ${colors.primary}10;
+  }
+
+  input[type="file"] {
+    display: none;
+  }
+`;
+
+const FileInputLabel = styled.label`
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: ${spacing.sm};
+  cursor: pointer;
+  color: ${colors.textSecondary};
+
+  svg {
+    font-size: 32px;
+    color: ${colors.primary};
+  }
+`;
+
+const FileName = styled.p`
+  margin-top: ${spacing.sm};
+  font-size: ${fontSize.sm};
+  color: ${colors.primary};
+  font-weight: 600;
+`;
+
 const SubmitButton = styled.button`
   background: ${colors.primary};
   color: ${colors.background};
@@ -273,10 +338,32 @@ const SubmitButton = styled.button`
   cursor: pointer;
   transition: all 0.2s;
   margin-top: ${spacing.md};
+  border: none;
 
   &:hover {
     background: ${colors.primaryDark};
   }
+
+  &:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+  }
+`;
+
+const ProgressBar = styled.div`
+  width: 100%;
+  height: 8px;
+  background: ${colors.backgroundGray};
+  border-radius: ${borderRadius.sm};
+  overflow: hidden;
+  margin-top: ${spacing.md};
+`;
+
+const ProgressFill = styled.div`
+  height: 100%;
+  background: ${colors.primary};
+  width: ${props => props.progress}%;
+  transition: width 0.3s;
 `;
 
 const EmptyState = styled.div`
@@ -304,11 +391,15 @@ const ManageChaptersPage = () => {
   const [loading, setLoading] = useState(true);
   const [showModal, setShowModal] = useState(false);
   const [editingChapter, setEditingChapter] = useState(null);
+  const [isUploading, setIsUploading] = useState(false);
+  const [uploadProgress, setUploadProgress] = useState(0);
+  
   const [formData, setFormData] = useState({
     chapterNumber: '',
     title: '',
     summary: '',
     readTimeMinutes: '5',
+    pdfFile: null,
   });
 
   useEffect(() => {
@@ -326,6 +417,7 @@ const ManageChaptersPage = () => {
       setChapters(chaptersResponse.data);
     } catch (error) {
       console.error('Error loading data:', error);
+      alert('Failed to load chapters');
     } finally {
       setLoading(false);
     }
@@ -339,6 +431,7 @@ const ManageChaptersPage = () => {
       title: '',
       summary: '',
       readTimeMinutes: '5',
+      pdfFile: null,
     });
     setShowModal(true);
   };
@@ -350,8 +443,19 @@ const ManageChaptersPage = () => {
       title: chapter.title,
       summary: chapter.summary,
       readTimeMinutes: chapter.readTimeMinutes.toString(),
+      pdfFile: null,
     });
     setShowModal(true);
+  };
+
+  const handleFileChange = (e) => {
+    const file = e.target.files[0];
+    if (file && file.type === 'application/pdf') {
+      setFormData({ ...formData, pdfFile: file });
+    } else {
+      alert('Please select a valid PDF file');
+      e.target.value = null;
+    }
   };
 
   const handleSubmit = async (e) => {
@@ -362,6 +466,9 @@ const ManageChaptersPage = () => {
       return;
     }
 
+    setIsUploading(true);
+    setUploadProgress(0);
+
     try {
       const chapterData = {
         bookId: id,
@@ -371,19 +478,56 @@ const ManageChaptersPage = () => {
         readTimeMinutes: parseInt(formData.readTimeMinutes) || 5,
       };
 
+      let chapterId;
+
       if (editingChapter) {
         await chaptersAPI.update(editingChapter.id, chapterData);
-        alert('Chapter updated successfully');
+        chapterId = editingChapter.id;
+        setUploadProgress(30);
       } else {
-        await chaptersAPI.create(chapterData);
-        alert('Chapter created successfully');
+        const result = await chaptersAPI.create(chapterData);
+        chapterId = result.data.id;
+        setUploadProgress(30);
       }
 
-      setShowModal(false);
-      loadData();
+      // Upload PDF if selected
+      if (formData.pdfFile && chapterId) {
+        const formDataToSend = new FormData();
+        formDataToSend.append('pdf', formData.pdfFile);
+        formDataToSend.append('chapterId', chapterId);
+
+        setUploadProgress(50);
+
+        // Simulate upload progress
+        const progressInterval = setInterval(() => {
+          setUploadProgress(prev => {
+            if (prev >= 90) {
+              clearInterval(progressInterval);
+              return 90;
+            }
+            return prev + 10;
+          });
+        }, 200);
+
+        await uploadAPI.uploadChapterPDF(formDataToSend);
+
+        clearInterval(progressInterval);
+        setUploadProgress(100);
+      } else {
+        setUploadProgress(100);
+      }
+
+      setTimeout(() => {
+        alert(editingChapter ? 'Chapter updated successfully' : 'Chapter created successfully');
+        setShowModal(false);
+        setIsUploading(false);
+        loadData();
+      }, 500);
+
     } catch (error) {
       console.error('Error saving chapter:', error);
-      alert('Failed to save chapter');
+      alert(error.response?.data?.error || 'Failed to save chapter');
+      setIsUploading(false);
     }
   };
 
@@ -398,6 +542,11 @@ const ManageChaptersPage = () => {
         alert('Failed to delete chapter');
       }
     }
+  };
+
+  const handleViewPDF = (chapterId) => {
+    const pdfUrl = uploadAPI.getChapterPDFUrl(chapterId);
+    window.open(pdfUrl, '_blank');
   };
 
   if (loading) {
@@ -426,7 +575,14 @@ const ManageChaptersPage = () => {
                 <ChapterNumber>{chapter.chapterNumber}</ChapterNumber>
                 <ChapterInfo>
                   <ChapterTitle>{chapter.title}</ChapterTitle>
-                  <ReadTime>{chapter.readTimeMinutes} min read</ReadTime>
+                  <ChapterMeta>
+                    <ReadTime>{chapter.readTimeMinutes} min read</ReadTime>
+                    {chapter.pdfPath && (
+                      <PDFBadge>
+                        <FiFile /> PDF
+                      </PDFBadge>
+                    )}
+                  </ChapterMeta>
                 </ChapterInfo>
               </ChapterHeader>
               <ChapterActions>
@@ -434,6 +590,12 @@ const ManageChaptersPage = () => {
                   <FiEdit2 />
                   Edit
                 </ActionButton>
+                {chapter.pdfPath && (
+                  <ActionButton view onClick={() => handleViewPDF(chapter.id)}>
+                    <FiEye />
+                    View PDF
+                  </ActionButton>
+                )}
                 <ActionButton danger onClick={() => handleDelete(chapter.id)}>
                   <FiTrash2 />
                   Delete
@@ -450,11 +612,11 @@ const ManageChaptersPage = () => {
       )}
 
       {showModal && (
-        <Modal onClick={() => setShowModal(false)}>
+        <Modal onClick={() => !isUploading && setShowModal(false)}>
           <ModalContent onClick={(e) => e.stopPropagation()}>
             <ModalHeader>
               <ModalTitle>{editingChapter ? 'Edit Chapter' : 'Add Chapter'}</ModalTitle>
-              <CloseButton onClick={() => setShowModal(false)}>×</CloseButton>
+              <CloseButton onClick={() => !isUploading && setShowModal(false)}>×</CloseButton>
             </ModalHeader>
 
             <Form onSubmit={handleSubmit}>
@@ -467,6 +629,7 @@ const ManageChaptersPage = () => {
                   placeholder="1"
                   required
                   min="1"
+                  disabled={isUploading}
                 />
               </FormGroup>
 
@@ -478,6 +641,7 @@ const ManageChaptersPage = () => {
                   onChange={(e) => setFormData({ ...formData, title: e.target.value })}
                   placeholder="Enter chapter title"
                   required
+                  disabled={isUploading}
                 />
               </FormGroup>
 
@@ -488,6 +652,7 @@ const ManageChaptersPage = () => {
                   onChange={(e) => setFormData({ ...formData, summary: e.target.value })}
                   placeholder="Enter chapter summary/blink content"
                   required
+                  disabled={isUploading}
                 />
               </FormGroup>
 
@@ -499,11 +664,43 @@ const ManageChaptersPage = () => {
                   onChange={(e) => setFormData({ ...formData, readTimeMinutes: e.target.value })}
                   placeholder="5"
                   min="1"
+                  disabled={isUploading}
                 />
               </FormGroup>
 
-              <SubmitButton type="submit">
-                {editingChapter ? 'Update Chapter' : 'Create Chapter'}
+              <FormGroup>
+                <Label>Chapter PDF (Optional)</Label>
+                <FileInputWrapper>
+                  <FileInputLabel htmlFor="chapter-pdf-file">
+                    <FiUpload />
+                    <span>Click to upload chapter PDF</span>
+                    <span style={{ fontSize: fontSize.xs, color: colors.textLight }}>
+                      Max size: 20MB
+                    </span>
+                    <input
+                      id="chapter-pdf-file"
+                      type="file"
+                      accept="application/pdf"
+                      onChange={handleFileChange}
+                      disabled={isUploading}
+                    />
+                  </FileInputLabel>
+                  {formData.pdfFile && (
+                    <FileName>{formData.pdfFile.name}</FileName>
+                  )}
+                </FileInputWrapper>
+              </FormGroup>
+
+              {isUploading && uploadProgress > 0 && (
+                <ProgressBar>
+                  <ProgressFill progress={uploadProgress} />
+                </ProgressBar>
+              )}
+
+              <SubmitButton type="submit" disabled={isUploading}>
+                {isUploading 
+                  ? `${uploadProgress < 100 ? 'Uploading...' : 'Saving...'} ${uploadProgress}%`
+                  : editingChapter ? 'Update Chapter' : 'Create Chapter'}
               </SubmitButton>
             </Form>
           </ModalContent>

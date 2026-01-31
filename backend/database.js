@@ -1,13 +1,45 @@
 const sqlite3 = require('sqlite3').verbose();
 const path = require('path');
 
-const dbPath = path.join(__dirname, 'blinkist.db');
-const db = new sqlite3.Database(dbPath);
+// Database path - will persist in Railway volume
+const DB_PATH = process.env.DATABASE_PATH || path.join(__dirname, 'blinkist.db');
+
+// Create database connection
+const db = new sqlite3.Database(DB_PATH, (err) => {
+  if (err) {
+    console.error('Error opening database:', err.message);
+  } else {
+    console.log('✅ Connected to SQLite database');
+  }
+});
 
 // Initialize database tables
 const initializeDatabase = () => {
   db.serialize(() => {
-    // Books table
+    // ============================================
+    // USERS TABLE (untuk admin login)
+    // ============================================
+    db.run(`
+      CREATE TABLE IF NOT EXISTS users (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        username TEXT UNIQUE NOT NULL,
+        email TEXT UNIQUE NOT NULL,
+        password TEXT NOT NULL,
+        role TEXT DEFAULT 'admin',
+        createdAt DATETIME DEFAULT CURRENT_TIMESTAMP,
+        updatedAt DATETIME DEFAULT CURRENT_TIMESTAMP
+      )
+    `, (err) => {
+      if (err) {
+        console.error('Error creating users table:', err.message);
+      } else {
+        console.log('✅ Users table ready');
+      }
+    });
+
+    // ============================================
+    // BOOKS TABLE (dengan pdfPath)
+    // ============================================
     db.run(`
       CREATE TABLE IF NOT EXISTS books (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -17,11 +49,40 @@ const initializeDatabase = () => {
         coverImage TEXT,
         category TEXT,
         totalChapters INTEGER DEFAULT 0,
-        createdAt DATETIME DEFAULT CURRENT_TIMESTAMP
+        pdfPath TEXT,
+        pdfFileName TEXT,
+        pdfSize INTEGER,
+        pageCount INTEGER DEFAULT 0,
+        createdAt DATETIME DEFAULT CURRENT_TIMESTAMP,
+        updatedAt DATETIME DEFAULT CURRENT_TIMESTAMP
       )
-    `);
+    `, (err) => {
+      if (err) {
+        console.error('Error creating books table:', err.message);
+      } else {
+        console.log('✅ Books table ready');
+        
+        // Add columns if they don't exist
+        const columnsToAdd = [
+          { name: 'pdfPath', type: 'TEXT' },
+          { name: 'pdfFileName', type: 'TEXT' },
+          { name: 'pdfSize', type: 'INTEGER' },
+          { name: 'pageCount', type: 'INTEGER DEFAULT 0' }
+        ];
+        
+        columnsToAdd.forEach(col => {
+          db.run(`ALTER TABLE books ADD COLUMN ${col.name} ${col.type}`, (err) => {
+            if (err && !err.message.includes('duplicate column')) {
+              console.error(`Error adding ${col.name} column:`, err.message);
+            }
+          });
+        });
+      }
+    });
 
-    // Chapters/Blinks table
+    // ============================================
+    // CHAPTERS TABLE (dengan pdfPath untuk chapter PDF)
+    // ============================================
     db.run(`
       CREATE TABLE IF NOT EXISTS chapters (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -30,73 +91,131 @@ const initializeDatabase = () => {
         title TEXT NOT NULL,
         summary TEXT NOT NULL,
         readTimeMinutes INTEGER DEFAULT 5,
-        FOREIGN KEY (bookId) REFERENCES books(id) ON DELETE CASCADE
+        pdfPath TEXT,
+        pdfFileName TEXT,
+        pdfSize INTEGER,
+        createdAt DATETIME DEFAULT CURRENT_TIMESTAMP,
+        updatedAt DATETIME DEFAULT CURRENT_TIMESTAMP,
+        FOREIGN KEY (bookId) REFERENCES books(id) ON DELETE CASCADE,
+        UNIQUE(bookId, chapterNumber)
       )
-    `);
+    `, (err) => {
+      if (err) {
+        console.error('Error creating chapters table:', err.message);
+      } else {
+        console.log('✅ Chapters table ready');
+        
+        // Add PDF columns to chapters if they don't exist
+        const columnsToAdd = [
+          { name: 'pdfPath', type: 'TEXT' },
+          { name: 'pdfFileName', type: 'TEXT' },
+          { name: 'pdfSize', type: 'INTEGER' }
+        ];
+        
+        columnsToAdd.forEach(col => {
+          db.run(`ALTER TABLE chapters ADD COLUMN ${col.name} ${col.type}`, (err) => {
+            if (err && !err.message.includes('duplicate column')) {
+              console.error(`Error adding ${col.name} column:`, err.message);
+            }
+          });
+        });
+      }
+    });
 
-    // Favorites table
+    // ============================================
+    // FAVORITES TABLE
+    // ============================================
     db.run(`
       CREATE TABLE IF NOT EXISTS favorites (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         deviceId TEXT NOT NULL,
         bookId INTEGER NOT NULL,
-        savedAt DATETIME DEFAULT CURRENT_TIMESTAMP,
+        createdAt DATETIME DEFAULT CURRENT_TIMESTAMP,
         FOREIGN KEY (bookId) REFERENCES books(id) ON DELETE CASCADE,
         UNIQUE(deviceId, bookId)
       )
-    `);
+    `, (err) => {
+      if (err) {
+        console.error('Error creating favorites table:', err.message);
+      } else {
+        console.log('✅ Favorites table ready');
+      }
+    });
 
-    // Reading Progress table
+    // ============================================
+    // READING PROGRESS TABLE
+    // ============================================
     db.run(`
       CREATE TABLE IF NOT EXISTS reading_progress (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         deviceId TEXT NOT NULL,
         bookId INTEGER NOT NULL,
         chaptersRead TEXT DEFAULT '[]',
-        lastReadChapter INTEGER,
+        lastReadChapter INTEGER DEFAULT 0,
         percentComplete REAL DEFAULT 0,
-        completedAt DATETIME,
-        lastUpdated DATETIME DEFAULT CURRENT_TIMESTAMP,
+        createdAt DATETIME DEFAULT CURRENT_TIMESTAMP,
+        updatedAt DATETIME DEFAULT CURRENT_TIMESTAMP,
         FOREIGN KEY (bookId) REFERENCES books(id) ON DELETE CASCADE,
         UNIQUE(deviceId, bookId)
       )
-    `);
+    `, (err) => {
+      if (err) {
+        console.error('Error creating reading_progress table:', err.message);
+      } else {
+        console.log('✅ Reading progress table ready');
+      }
+    });
+  });
 
-    console.log('Database tables initialized successfully');
+  console.log('✅ Database tables initialized successfully');
+};
+
+// Helper function to run queries
+const query = (sql, params = []) => {
+  return new Promise((resolve, reject) => {
+    db.all(sql, params, (err, rows) => {
+      if (err) {
+        console.error('Query error:', err.message);
+        reject(err);
+      } else {
+        resolve(rows);
+      }
+    });
   });
 };
 
-// Helper functions for database operations
-const dbHelpers = {
-  // Generic query function
-  query: (sql, params = []) => {
-    return new Promise((resolve, reject) => {
-      db.all(sql, params, (err, rows) => {
-        if (err) reject(err);
-        else resolve(rows);
-      });
+// Helper function to get single row
+const get = (sql, params = []) => {
+  return new Promise((resolve, reject) => {
+    db.get(sql, params, (err, row) => {
+      if (err) {
+        console.error('Get error:', err.message);
+        reject(err);
+      } else {
+        resolve(row);
+      }
     });
-  },
-
-  // Generic get function
-  get: (sql, params = []) => {
-    return new Promise((resolve, reject) => {
-      db.get(sql, params, (err, row) => {
-        if (err) reject(err);
-        else resolve(row);
-      });
-    });
-  },
-
-  // Generic run function
-  run: (sql, params = []) => {
-    return new Promise((resolve, reject) => {
-      db.run(sql, params, function(err) {
-        if (err) reject(err);
-        else resolve({ id: this.lastID, changes: this.changes });
-      });
-    });
-  }
+  });
 };
 
-module.exports = { db, initializeDatabase, dbHelpers };
+// Helper function to run insert/update/delete
+const run = (sql, params = []) => {
+  return new Promise((resolve, reject) => {
+    db.run(sql, params, function(err) {
+      if (err) {
+        console.error('Run error:', err.message);
+        reject(err);
+      } else {
+        resolve({ id: this.lastID, changes: this.changes });
+      }
+    });
+  });
+};
+
+module.exports = {
+  db,
+  initializeDatabase,
+  query,
+  get,
+  run,
+};

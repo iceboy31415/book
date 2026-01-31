@@ -1,10 +1,10 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import styled from '@emotion/styled';
-import { booksAPI, chaptersAPI } from '../services/api';
+import { booksAPI, uploadAPI } from '../services/api';
 import LoadingSpinner from '../components/LoadingSpinner';
 import { colors, spacing, fontSize, borderRadius, shadows } from '../styles/theme';
-import { FiPlus, FiEdit2, FiTrash2, FiList } from 'react-icons/fi';
+import { FiPlus, FiEdit2, FiTrash2, FiList, FiUpload, FiFile } from 'react-icons/fi';
 
 const Container = styled.div`
   max-width: 1200px;
@@ -35,6 +35,11 @@ const Title = styled.h1`
   }
 `;
 
+const ButtonGroup = styled.div`
+  display: flex;
+  gap: ${spacing.md};
+`;
+
 const AddButton = styled.button`
   display: flex;
   align-items: center;
@@ -47,6 +52,7 @@ const AddButton = styled.button`
   font-weight: 600;
   cursor: pointer;
   transition: all 0.2s;
+  border: none;
 
   &:hover {
     background: ${colors.primaryDark};
@@ -54,6 +60,14 @@ const AddButton = styled.button`
 
   svg {
     font-size: 20px;
+  }
+`;
+
+const UploadPDFButton = styled(AddButton)`
+  background: ${colors.secondary};
+
+  &:hover {
+    opacity: 0.9;
   }
 `;
 
@@ -123,6 +137,23 @@ const BookMeta = styled.div`
   gap: ${spacing.md};
   font-size: ${fontSize.xs};
   color: ${colors.textLight};
+  flex-wrap: wrap;
+`;
+
+const PDFBadge = styled.span`
+  display: inline-flex;
+  align-items: center;
+  gap: ${spacing.xs};
+  background: ${colors.primary}20;
+  color: ${colors.primary};
+  padding: ${spacing.xs} ${spacing.sm};
+  border-radius: ${borderRadius.sm};
+  font-size: ${fontSize.xs};
+  font-weight: 600;
+
+  svg {
+    font-size: 14px;
+  }
 `;
 
 const BookActions = styled.div`
@@ -148,6 +179,7 @@ const ActionButton = styled.button`
   font-weight: 600;
   cursor: pointer;
   transition: all 0.2s;
+  border: none;
 
   &:hover {
     opacity: 0.8;
@@ -255,6 +287,45 @@ const TextArea = styled.textarea`
   }
 `;
 
+const FileInputWrapper = styled.div`
+  border: 2px dashed ${colors.border};
+  border-radius: ${borderRadius.md};
+  padding: ${spacing.lg};
+  text-align: center;
+  cursor: pointer;
+  transition: all 0.2s;
+
+  &:hover {
+    border-color: ${colors.primary};
+    background: ${colors.primary}10;
+  }
+
+  input[type="file"] {
+    display: none;
+  }
+`;
+
+const FileInputLabel = styled.label`
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: ${spacing.sm};
+  cursor: pointer;
+  color: ${colors.textSecondary};
+
+  svg {
+    font-size: 48px;
+    color: ${colors.primary};
+  }
+`;
+
+const FileName = styled.p`
+  margin-top: ${spacing.sm};
+  font-size: ${fontSize.sm};
+  color: ${colors.primary};
+  font-weight: 600;
+`;
+
 const SubmitButton = styled.button`
   background: ${colors.primary};
   color: ${colors.background};
@@ -265,6 +336,7 @@ const SubmitButton = styled.button`
   cursor: pointer;
   transition: all 0.2s;
   margin-top: ${spacing.md};
+  border: none;
 
   &:hover {
     background: ${colors.primaryDark};
@@ -274,6 +346,22 @@ const SubmitButton = styled.button`
     opacity: 0.5;
     cursor: not-allowed;
   }
+`;
+
+const ProgressBar = styled.div`
+  width: 100%;
+  height: 8px;
+  background: ${colors.backgroundGray};
+  border-radius: ${borderRadius.sm};
+  overflow: hidden;
+  margin-top: ${spacing.md};
+`;
+
+const ProgressFill = styled.div`
+  height: 100%;
+  background: ${colors.primary};
+  width: ${props => props.progress}%;
+  transition: width 0.3s;
 `;
 
 const EmptyState = styled.div`
@@ -298,13 +386,25 @@ const AdminPage = () => {
   const [books, setBooks] = useState([]);
   const [loading, setLoading] = useState(true);
   const [showModal, setShowModal] = useState(false);
+  const [showPDFModal, setShowPDFModal] = useState(false);
   const [editingBook, setEditingBook] = useState(null);
+  const [uploadProgress, setUploadProgress] = useState(0);
+  const [isUploading, setIsUploading] = useState(false);
+  
   const [formData, setFormData] = useState({
     title: '',
     author: '',
     description: '',
     category: '',
     coverImage: '',
+  });
+
+  const [pdfFormData, setPDFFormData] = useState({
+    title: '',
+    author: '',
+    description: '',
+    category: '',
+    pdfFile: null,
   });
 
   useEffect(() => {
@@ -318,6 +418,7 @@ const AdminPage = () => {
       setBooks(response.data);
     } catch (error) {
       console.error('Error loading books:', error);
+      alert('Failed to load books');
     } finally {
       setLoading(false);
     }
@@ -333,6 +434,18 @@ const AdminPage = () => {
       coverImage: '',
     });
     setShowModal(true);
+  };
+
+  const openPDFModal = () => {
+    setPDFFormData({
+      title: '',
+      author: '',
+      description: '',
+      category: '',
+      pdfFile: null,
+    });
+    setUploadProgress(0);
+    setShowPDFModal(true);
   };
 
   const openEditModal = (book) => {
@@ -371,6 +484,60 @@ const AdminPage = () => {
     }
   };
 
+  const handlePDFSubmit = async (e) => {
+    e.preventDefault();
+
+    if (!pdfFormData.title.trim() || !pdfFormData.author.trim()) {
+      alert('Title and author are required');
+      return;
+    }
+
+    if (!pdfFormData.pdfFile) {
+      alert('Please select a PDF file');
+      return;
+    }
+
+    setIsUploading(true);
+    setUploadProgress(0);
+
+    try {
+      const formDataToSend = new FormData();
+      formDataToSend.append('pdf', pdfFormData.pdfFile);
+      formDataToSend.append('title', pdfFormData.title);
+      formDataToSend.append('author', pdfFormData.author);
+      formDataToSend.append('description', pdfFormData.description);
+      formDataToSend.append('category', pdfFormData.category);
+
+      // Simulate upload progress
+      const progressInterval = setInterval(() => {
+        setUploadProgress(prev => {
+          if (prev >= 90) {
+            clearInterval(progressInterval);
+            return 90;
+          }
+          return prev + 10;
+        });
+      }, 200);
+
+      await uploadAPI.uploadBookPDF(formDataToSend);
+
+      clearInterval(progressInterval);
+      setUploadProgress(100);
+
+      setTimeout(() => {
+        alert('Book PDF uploaded successfully');
+        setShowPDFModal(false);
+        loadBooks();
+        setIsUploading(false);
+      }, 500);
+
+    } catch (error) {
+      console.error('Error uploading PDF:', error);
+      alert(error.response?.data?.error || 'Failed to upload PDF');
+      setIsUploading(false);
+    }
+  };
+
   const handleDelete = async (bookId) => {
     if (window.confirm('Are you sure you want to delete this book? This will also delete all chapters.')) {
       try {
@@ -388,6 +555,16 @@ const AdminPage = () => {
     navigate(`/admin/book/${bookId}/chapters`);
   };
 
+  const handleFileChange = (e) => {
+    const file = e.target.files[0];
+    if (file && file.type === 'application/pdf') {
+      setPDFFormData({ ...pdfFormData, pdfFile: file });
+    } else {
+      alert('Please select a valid PDF file');
+      e.target.value = null;
+    }
+  };
+
   if (loading) {
     return <LoadingSpinner />;
   }
@@ -396,10 +573,16 @@ const AdminPage = () => {
     <Container>
       <Header>
         <Title>Admin Panel</Title>
-        <AddButton onClick={openAddModal}>
-          <FiPlus />
-          Add Book
-        </AddButton>
+        <ButtonGroup>
+          <AddButton onClick={openAddModal}>
+            <FiPlus />
+            Add Book
+          </AddButton>
+          <UploadPDFButton onClick={openPDFModal}>
+            <FiUpload />
+            Upload PDF
+          </UploadPDFButton>
+        </ButtonGroup>
       </Header>
 
       {books.length > 0 ? (
@@ -419,6 +602,11 @@ const AdminPage = () => {
                   <BookMeta>
                     {book.category && <span>{book.category}</span>}
                     <span>{book.totalChapters || 0} chapters</span>
+                    {book.pdfPath && (
+                      <PDFBadge>
+                        <FiFile /> PDF Available
+                      </PDFBadge>
+                    )}
                   </BookMeta>
                 </BookInfo>
               </BookHeader>
@@ -443,10 +631,11 @@ const AdminPage = () => {
       ) : (
         <EmptyState>
           <EmptyText>No books yet</EmptyText>
-          <EmptySubtext>Click "Add Book" to create your first book</EmptySubtext>
+          <EmptySubtext>Click "Add Book" or "Upload PDF" to create your first book</EmptySubtext>
         </EmptyState>
       )}
 
+      {/* Add/Edit Book Modal */}
       {showModal && (
         <Modal onClick={() => setShowModal(false)}>
           <ModalContent onClick={(e) => e.stopPropagation()}>
@@ -509,6 +698,98 @@ const AdminPage = () => {
 
               <SubmitButton type="submit">
                 {editingBook ? 'Update Book' : 'Create Book'}
+              </SubmitButton>
+            </Form>
+          </ModalContent>
+        </Modal>
+      )}
+
+      {/* Upload PDF Modal */}
+      {showPDFModal && (
+        <Modal onClick={() => !isUploading && setShowPDFModal(false)}>
+          <ModalContent onClick={(e) => e.stopPropagation()}>
+            <ModalHeader>
+              <ModalTitle>Upload Book PDF</ModalTitle>
+              <CloseButton onClick={() => !isUploading && setShowPDFModal(false)}>×</CloseButton>
+            </ModalHeader>
+
+            <Form onSubmit={handlePDFSubmit}>
+              <FormGroup>
+                <Label>PDF File *</Label>
+                <FileInputWrapper>
+                  <FileInputLabel htmlFor="pdf-file">
+                    <FiUpload />
+                    <span>Click to select PDF file</span>
+                    <span style={{ fontSize: fontSize.xs, color: colors.textLight }}>
+                      Max size: 50MB
+                    </span>
+                    <input
+                      id="pdf-file"
+                      type="file"
+                      accept="application/pdf"
+                      onChange={handleFileChange}
+                      disabled={isUploading}
+                    />
+                  </FileInputLabel>
+                  {pdfFormData.pdfFile && (
+                    <FileName>{pdfFormData.pdfFile.name}</FileName>
+                  )}
+                </FileInputWrapper>
+              </FormGroup>
+
+              <FormGroup>
+                <Label>Title *</Label>
+                <Input
+                  type="text"
+                  value={pdfFormData.title}
+                  onChange={(e) => setPDFFormData({ ...pdfFormData, title: e.target.value })}
+                  placeholder="Enter book title"
+                  required
+                  disabled={isUploading}
+                />
+              </FormGroup>
+
+              <FormGroup>
+                <Label>Author *</Label>
+                <Input
+                  type="text"
+                  value={pdfFormData.author}
+                  onChange={(e) => setPDFFormData({ ...pdfFormData, author: e.target.value })}
+                  placeholder="Enter author name"
+                  required
+                  disabled={isUploading}
+                />
+              </FormGroup>
+
+              <FormGroup>
+                <Label>Category</Label>
+                <Input
+                  type="text"
+                  value={pdfFormData.category}
+                  onChange={(e) => setPDFFormData({ ...pdfFormData, category: e.target.value })}
+                  placeholder="e.g., Self-Help, Business"
+                  disabled={isUploading}
+                />
+              </FormGroup>
+
+              <FormGroup>
+                <Label>Description</Label>
+                <TextArea
+                  value={pdfFormData.description}
+                  onChange={(e) => setPDFFormData({ ...pdfFormData, description: e.target.value })}
+                  placeholder="Enter book description"
+                  disabled={isUploading}
+                />
+              </FormGroup>
+
+              {isUploading && (
+                <ProgressBar>
+                  <ProgressFill progress={uploadProgress} />
+                </ProgressBar>
+              )}
+
+              <SubmitButton type="submit" disabled={isUploading}>
+                {isUploading ? `Uploading... ${uploadProgress}%` : 'Upload PDF'}
               </SubmitButton>
             </Form>
           </ModalContent>

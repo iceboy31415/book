@@ -1,10 +1,10 @@
 import React, { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import styled from '@emotion/styled';
-import { chaptersAPI, progressAPI, getDeviceId } from '../services/api';
+import { chaptersAPI, progressAPI, getDeviceId, uploadAPI } from '../services/api';
 import LoadingSpinner from '../components/LoadingSpinner';
 import { colors, spacing, fontSize, borderRadius } from '../styles/theme';
-import { FiArrowLeft, FiArrowRight } from 'react-icons/fi';
+import { FiArrowLeft, FiArrowRight, FiFile } from 'react-icons/fi';
 
 const Container = styled.div`
   max-width: 800px;
@@ -82,6 +82,31 @@ const ChapterTitle = styled.h1`
 const ReadTime = styled.p`
   font-size: ${fontSize.sm};
   color: ${colors.textLight};
+  margin-bottom: ${spacing.md};
+`;
+
+const PDFViewerButton = styled.button`
+  display: inline-flex;
+  align-items: center;
+  gap: ${spacing.sm};
+  background: ${colors.primary};
+  color: ${colors.background};
+  padding: ${spacing.md} ${spacing.lg};
+  border-radius: ${borderRadius.md};
+  font-size: ${fontSize.md};
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s;
+  border: none;
+  margin-top: ${spacing.md};
+
+  &:hover {
+    background: ${colors.primaryDark};
+  }
+
+  svg {
+    font-size: 20px;
+  }
 `;
 
 const Summary = styled.div`
@@ -89,6 +114,25 @@ const Summary = styled.div`
   color: ${colors.text};
   line-height: 1.8;
   text-align: justify;
+  white-space: pre-wrap;
+`;
+
+const PDFContainer = styled.div`
+  margin-top: ${spacing.xl};
+  border: 2px solid ${colors.border};
+  border-radius: ${borderRadius.lg};
+  overflow: hidden;
+  background: ${colors.backgroundGray};
+`;
+
+const PDFEmbed = styled.iframe`
+  width: 100%;
+  height: 600px;
+  border: none;
+
+  @media (max-width: 768px) {
+    height: 400px;
+  }
 `;
 
 const Footer = styled.div`
@@ -113,6 +157,7 @@ const NavButton = styled.button`
   border-radius: ${borderRadius.md};
   cursor: ${props => props.disabled ? 'not-allowed' : 'pointer'};
   transition: all 0.2s;
+  border: none;
 
   &:hover {
     opacity: ${props => props.disabled ? 1 : 0.9};
@@ -129,6 +174,7 @@ const ChapterReaderPage = () => {
   const [chapter, setChapter] = useState(null);
   const [totalChapters, setTotalChapters] = useState(0);
   const [loading, setLoading] = useState(true);
+  const [showPDF, setShowPDF] = useState(false);
 
   const deviceId = getDeviceId();
   const currentChapter = parseInt(chapterNumber);
@@ -147,6 +193,11 @@ const ChapterReaderPage = () => {
 
       setChapter(current);
       setTotalChapters(chapters.length);
+      
+      // Auto show PDF if available
+      if (current?.pdfPath) {
+        setShowPDF(true);
+      }
     } catch (error) {
       console.error('Error loading chapter:', error);
     } finally {
@@ -190,6 +241,12 @@ const ChapterReaderPage = () => {
     }
   };
 
+  const handleViewPDF = () => {
+    if (chapter?.pdfPath) {
+      setShowPDF(!showPDF);
+    }
+  };
+
   if (loading) {
     return <LoadingSpinner />;
   }
@@ -201,6 +258,8 @@ const ChapterReaderPage = () => {
       </Container>
     );
   }
+
+  const pdfUrl = chapter.pdfPath ? uploadAPI.getChapterPDFUrl(chapter.id) : null;
 
   return (
     <Container>
@@ -218,9 +277,26 @@ const ChapterReaderPage = () => {
           <ChapterBadge>Blink {currentChapter}</ChapterBadge>
           <ChapterTitle>{chapter.title}</ChapterTitle>
           <ReadTime>{chapter.readTimeMinutes} min read</ReadTime>
+          
+          {chapter.pdfPath && (
+            <PDFViewerButton onClick={handleViewPDF}>
+              <FiFile />
+              {showPDF ? 'Hide PDF' : 'View PDF'}
+            </PDFViewerButton>
+          )}
         </ChapterHeader>
 
         <Summary>{chapter.summary}</Summary>
+
+        {showPDF && pdfUrl && (
+          <PDFContainer>
+            <PDFEmbed
+              src={pdfUrl}
+              title={`Chapter ${currentChapter} PDF`}
+              type="application/pdf"
+            />
+          </PDFContainer>
+        )}
       </Content>
 
       <Footer>

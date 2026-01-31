@@ -1,8 +1,9 @@
 import React from 'react';
-import { Link, useLocation } from 'react-router-dom';
+import { Link, useLocation, useNavigate } from 'react-router-dom';
 import styled from '@emotion/styled';
+import { useAuth } from '../context/AuthContext';
 import { colors, spacing, fontSize, shadows } from '../styles/theme';
-import { FiHome, FiBookmark, FiGrid, FiSettings } from 'react-icons/fi';
+import { FiHome, FiBookmark, FiGrid, FiSettings, FiLogOut } from 'react-icons/fi';
 
 const Nav = styled.nav`
   background: ${colors.background};
@@ -27,9 +28,22 @@ const Logo = styled(Link)`
   font-weight: bold;
   color: ${colors.primary};
   text-decoration: none;
+  display: flex;
+  align-items: center;
+  gap: ${spacing.sm};
   
   &:hover {
     color: ${colors.primaryDark};
+  }
+`;
+
+const LogoIcon = styled.span`
+  font-size: 28px;
+`;
+
+const LogoText = styled.span`
+  @media (max-width: 480px) {
+    display: none;
   }
 `;
 
@@ -75,15 +89,71 @@ const NavLink = styled(Link)`
   }
 `;
 
+const LogoutButton = styled.button`
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: ${spacing.xs};
+  color: ${colors.error};
+  font-size: ${fontSize.sm};
+  font-weight: 400;
+  background: none;
+  border: none;
+  padding: ${spacing.sm} ${spacing.md};
+  border-radius: 8px;
+  cursor: pointer;
+  transition: all 0.2s;
+
+  svg {
+    font-size: 20px;
+  }
+
+  &:hover {
+    background: ${colors.error}10;
+  }
+
+  @media (max-width: 768px) {
+    font-size: ${fontSize.xs};
+    padding: ${spacing.xs} ${spacing.sm};
+    
+    svg {
+      font-size: 18px;
+    }
+  }
+`;
+
+const AdminBadge = styled.span`
+  background: ${colors.primary};
+  color: ${colors.background};
+  font-size: ${fontSize.xs};
+  padding: 2px 8px;
+  border-radius: ${fontSize.xs};
+  font-weight: 600;
+  margin-left: ${spacing.sm};
+`;
+
 const Navbar = () => {
   const location = useLocation();
+  const navigate = useNavigate();
+  const { isAuthenticated, user, logout } = useAuth();
 
   const isActive = (path) => location.pathname === path;
+
+  const handleLogout = () => {
+    logout();
+    navigate('/');
+  };
 
   return (
     <Nav>
       <NavContainer>
-        <Logo to="/">📚 Blinkist Clone</Logo>
+        <Logo to="/">
+          <LogoIcon>📚</LogoIcon>
+          <LogoText>
+            BookBlinks
+            {isAuthenticated && <AdminBadge>Admin</AdminBadge>}
+          </LogoText>
+        </Logo>
         <NavLinks>
           <NavLink to="/" active={isActive('/')}>
             <FiHome />
@@ -97,10 +167,16 @@ const Navbar = () => {
             <FiGrid />
             <span>Categories</span>
           </NavLink>
-          <NavLink to="/admin" active={isActive('/admin')}>
+          <NavLink to="/admin" active={location.pathname.startsWith('/admin') && location.pathname !== '/admin/login'}>
             <FiSettings />
             <span>Admin</span>
           </NavLink>
+          {isAuthenticated && (
+            <LogoutButton onClick={handleLogout}>
+              <FiLogOut />
+              <span>Logout</span>
+            </LogoutButton>
+          )}
         </NavLinks>
       </NavContainer>
     </Nav>
