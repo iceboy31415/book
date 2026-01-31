@@ -1,5 +1,4 @@
-require('dotenv').config();
-const express = require('express');
+
 const cors = require('cors');
 const bodyParser = require('body-parser');
 const cookieParser = require('cookie-parser');
@@ -160,6 +159,54 @@ app.get('/health', (req, res) => {
     uptime: process.uptime(),
     environment: process.env.NODE_ENV || 'development',
   });
+});
+
+
+app.get('/setup-database', async (req, res) => {
+  try {
+    const bcrypt = require('bcryptjs');
+    
+    // Check if already setup
+    const adminExists = await get('SELECT * FROM users LIMIT 1').catch(() => null);
+    
+    if (adminExists) {
+      return res.json({
+        status: 'already_setup',
+        message: 'Database is already configured',
+      });
+    }
+
+    // Create default admin
+    const username = process.env.DEFAULT_ADMIN_USERNAME || 'admin';
+    const email = process.env.DEFAULT_ADMIN_EMAIL || 'admin@bookblinks.com';
+    const password = process.env.DEFAULT_ADMIN_PASSWORD || 'admin123';
+
+    const salt = await bcrypt.genSalt(10);
+    const hashedPassword = await bcrypt.hash(password, salt);
+
+    await run(`
+      INSERT INTO users (username, email, password, role)
+      VALUES (?, ?, ?, 'admin')
+    `, [username, email, hashedPassword]);
+
+    res.json({
+      status: 'success',
+      message: 'Database setup completed!',
+      credentials: {
+        username: username,
+        email: email,
+        password: '***hidden***',
+        note: 'Check your environment variables for the password',
+      }
+    });
+
+  } catch (error) {
+    console.error('Setup error:', error);
+    res.status(500).json({
+      status: 'error',
+      error: error.message,
+    });
+  }
 });
 
 // API info endpoint
