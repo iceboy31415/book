@@ -28,11 +28,7 @@ const PORT = process.env.PORT || 3000;
 // CORS CONFIGURATION
 // ============================================
 const allowedOrigins = [
-  'http://localhost:3000',
-  'http://localhost:3001',
-  'http://localhost:5173',
-  'http://127.0.0.1:3000',
-  'https://keen-palmier-2ab5ea.netlify.app',
+  'https://ikda-mi.netlify.app',
   process.env.FRONTEND_URL,
 ];
 
