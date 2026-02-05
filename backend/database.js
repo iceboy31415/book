@@ -9,7 +9,7 @@ const db = new sqlite3.Database(DB_PATH, (err) => {
   if (err) {
     console.error('Error opening database:', err.message);
   } else {
-    console.log('✅ Connected to SQLite database');
+    console.log('✅ Connected to SQLite database at:', DB_PATH);
   }
 });
 
@@ -17,7 +17,7 @@ const db = new sqlite3.Database(DB_PATH, (err) => {
 const initializeDatabase = () => {
   db.serialize(() => {
     // ============================================
-    // USERS TABLE (untuk admin login)
+    // USERS TABLE
     // ============================================
     db.run(`
       CREATE TABLE IF NOT EXISTS users (
@@ -38,7 +38,7 @@ const initializeDatabase = () => {
     });
 
     // ============================================
-    // BOOKS TABLE (dengan pdfPath)
+    // BOOKS TABLE
     // ============================================
     db.run(`
       CREATE TABLE IF NOT EXISTS books (
@@ -61,27 +61,11 @@ const initializeDatabase = () => {
         console.error('Error creating books table:', err.message);
       } else {
         console.log('✅ Books table ready');
-        
-        // Add columns if they don't exist
-        const columnsToAdd = [
-          { name: 'pdfPath', type: 'TEXT' },
-          { name: 'pdfFileName', type: 'TEXT' },
-          { name: 'pdfSize', type: 'INTEGER' },
-          { name: 'pageCount', type: 'INTEGER DEFAULT 0' }
-        ];
-        
-        columnsToAdd.forEach(col => {
-          db.run(`ALTER TABLE books ADD COLUMN ${col.name} ${col.type}`, (err) => {
-            if (err && !err.message.includes('duplicate column')) {
-              console.error(`Error adding ${col.name} column:`, err.message);
-            }
-          });
-        });
       }
     });
 
     // ============================================
-    // CHAPTERS TABLE (dengan pdfPath untuk chapter PDF)
+    // CHAPTERS TABLE
     // ============================================
     db.run(`
       CREATE TABLE IF NOT EXISTS chapters (
@@ -104,21 +88,6 @@ const initializeDatabase = () => {
         console.error('Error creating chapters table:', err.message);
       } else {
         console.log('✅ Chapters table ready');
-        
-        // Add PDF columns to chapters if they don't exist
-        const columnsToAdd = [
-          { name: 'pdfPath', type: 'TEXT' },
-          { name: 'pdfFileName', type: 'TEXT' },
-          { name: 'pdfSize', type: 'INTEGER' }
-        ];
-        
-        columnsToAdd.forEach(col => {
-          db.run(`ALTER TABLE chapters ADD COLUMN ${col.name} ${col.type}`, (err) => {
-            if (err && !err.message.includes('duplicate column')) {
-              console.error(`Error adding ${col.name} column:`, err.message);
-            }
-          });
-        });
       }
     });
 

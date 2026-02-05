@@ -293,8 +293,8 @@ app.get('/api/debug-db', async (req, res) => {
           });
         }
 
-        // Get all users (without passwords)
-        db.all('SELECT id, username, email, role, createdAt FROM users', (err, users) => {
+        // Get all users (only basic columns)
+        db.all('SELECT id, username, email, role FROM users', (err, users) => {
           db.close();
           
           if (err) {
@@ -321,8 +321,9 @@ app.get('/api/debug-db', async (req, res) => {
     });
   }
 });
+```
 
-// ============================================
+---// ============================================
 // ERROR HANDLERS (MUST BE LAST!)
 // ============================================
 
