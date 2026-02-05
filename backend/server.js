@@ -42,7 +42,7 @@ app.use(cors({
       return callback(null, true);
     }
     if (process.env.NODE_ENV === 'production') {
-      return callback(null, true); // Allow all in production for now
+      return callback(null, true);
     }
     return callback(null, true);
   },
@@ -80,7 +80,7 @@ if (process.env.NODE_ENV !== 'production') {
 // Initialize database
 initializeDatabase();
 
-// Auto-create admin user
+// Auto-create admin user (improved)
 setTimeout(async () => {
   try {
     const bcrypt = require('bcryptjs');
@@ -102,13 +102,17 @@ setTimeout(async () => {
       console.log('Username: admin');
       console.log('Password: admin123');
       console.log('═══════════════════════════════════════');
+    } else {
+      console.log('✅ Admin user already exists');
     }
   } catch (err) {
     console.log('⚠️  Admin creation skipped:', err.message);
   }
-}, 3000);
+}, 5000); // Increased to 5 seconds
 
-// API Routes
+// ============================================
+// API ROUTES
+// ============================================
 app.use('/api/auth', authRoutes);
 app.use('/api/books', booksRoutes);
 app.use('/api/chapters', chaptersRoutes);
@@ -116,6 +120,10 @@ app.use('/api/favorites', favoritesRoutes);
 app.use('/api/progress', progressRoutes);
 app.use('/api/upload', uploadRoutes);
 app.use('/api', utilityRoutes);
+
+// ============================================
+// ROOT & HEALTH ENDPOINTS
+// ============================================
 
 // Root endpoint
 app.get('/', (req, res) => {
@@ -126,6 +134,7 @@ app.get('/', (req, res) => {
     timestamp: new Date().toISOString(),
     endpoints: {
       health: '/health',
+      setup: '/api/setup-admin-now',
       auth: {
         login: 'POST /api/auth/login',
         verify: 'GET /api/auth/verify',
@@ -147,6 +156,175 @@ app.get('/health', (req, res) => {
     uptime: process.uptime(),
   });
 });
+
+// ============================================
+// SETUP ADMIN ENDPOINT (TEMPORARY)
+// ============================================
+app.get('/api/setup-admin-now', async (req, res) => {
+  try {
+    const bcrypt = require('bcryptjs');
+    const sqlite3 = require('sqlite3').verbose();
+    const dbPath = process.env.DATABASE_PATH || path.join(__dirname, 'blinkist.db');
+    
+    console.log('🔧 Setup admin requested');
+    console.log('Database path:', dbPath);
+    
+    const db = new sqlite3.Database(dbPath, (err) => {
+      if (err) {
+        console.error('❌ Database connection error:', err.message);
+      } else {
+        console.log('✅ Database connected');
+      }
+    });
+
+    // Check if admin exists
+    db.get('SELECT * FROM users WHERE username = ?', ['admin'], async (err, row) => {
+      if (err) {
+        console.error('❌ Query error:', err.message);
+        db.close();
+        return res.status(500).json({ 
+          status: 'error',
+          error: err.message 
+        });
+      }
+
+      if (row) {
+        console.log('✅ Admin already exists:', row.username);
+        db.close();
+        return res.json({ 
+          status: 'exists',
+          message: 'Admin already exists',
+          username: row.username,
+          email: row.email,
+          role: row.role
+        });
+      }
+
+      // Create admin
+      console.log('📝 Creating new admin user...');
+      
+      try {
+        const salt = await bcrypt.genSalt(10);
+        const hash = await bcrypt.hash('admin123', salt);
+
+        db.run(
+          'INSERT INTO users (username, email, password, role) VALUES (?, ?, ?, ?)',
+          ['admin', 'admin@bookblinks.com', hash, 'admin'],
+          function(err) {
+            if (err) {
+              console.error('❌ Insert error:', err.message);
+              db.close();
+              return res.status(500).json({ 
+                status: 'error',
+                error: err.message 
+              });
+            }
+
+            console.log('✅ Admin created successfully! ID:', this.lastID);
+            db.close();
+            
+            res.json({
+              status: 'success',
+              message: '✅ Admin created successfully!',
+              credentials: {
+                id: this.lastID,
+                username: 'admin',
+                email: 'admin@bookblinks.com',
+                password: 'admin123'
+              },
+              note: 'Please change password after first login'
+            });
+          }
+        );
+      } catch (hashError) {
+        console.error('❌ Hash error:', hashError.message);
+        db.close();
+        res.status(500).json({
+          status: 'error',
+          error: hashError.message
+        });
+      }
+    });
+  } catch (error) {
+    console.error('❌ Setup error:', error.message);
+    res.status(500).json({ 
+      status: 'error',
+      error: error.message 
+    });
+  }
+});
+
+// ============================================
+// DEBUG ENDPOINT (TEMPORARY)
+// ============================================
+app.get('/api/debug-db', async (req, res) => {
+  try {
+    const sqlite3 = require('sqlite3').verbose();
+    const dbPath = process.env.DATABASE_PATH || path.join(__dirname, 'blinkist.db');
+    
+    const db = new sqlite3.Database(dbPath);
+
+    // Check if users table exists
+    db.get("SELECT name FROM sqlite_master WHERE type='table' AND name='users'", (err, table) => {
+      if (err) {
+        db.close();
+        return res.json({ 
+          status: 'error',
+          error: err.message 
+        });
+      }
+
+      if (!table) {
+        db.close();
+        return res.json({ 
+          status: 'error',
+          message: 'Users table does not exist!',
+          dbPath: dbPath
+        });
+      }
+
+      // Count users
+      db.get('SELECT COUNT(*) as count FROM users', (err, count) => {
+        if (err) {
+          db.close();
+          return res.json({ 
+            status: 'error',
+            error: err.message 
+          });
+        }
+
+        // Get all users (without passwords)
+        db.all('SELECT id, username, email, role, createdAt FROM users', (err, users) => {
+          db.close();
+          
+          if (err) {
+            return res.json({ 
+              status: 'error',
+              error: err.message 
+            });
+          }
+
+          res.json({
+            status: 'ok',
+            dbPath: dbPath,
+            tableExists: true,
+            userCount: count.count,
+            users: users
+          });
+        });
+      });
+    });
+  } catch (error) {
+    res.status(500).json({ 
+      status: 'error',
+      error: error.message 
+    });
+  }
+});
+
+// ============================================
+// ERROR HANDLERS (MUST BE LAST!)
+// ============================================
 
 // 404 handler
 app.use((req, res) => {
@@ -180,7 +358,9 @@ app.use((err, req, res, next) => {
   });
 });
 
-// Start server
+// ============================================
+// START SERVER
+// ============================================
 app.listen(PORT, '0.0.0.0', () => {
   console.log('═══════════════════════════════════════════════════════');
   console.log('📚 BookBlinks API Server Started');
@@ -189,6 +369,7 @@ app.listen(PORT, '0.0.0.0', () => {
   console.log(`🌍 Environment: ${process.env.NODE_ENV || 'development'}`);
   console.log(`📚 API: http://localhost:${PORT}/api`);
   console.log(`💚 Health: http://localhost:${PORT}/health`);
+  console.log(`🔧 Setup: http://localhost:${PORT}/api/setup-admin-now`);
   console.log('═══════════════════════════════════════════════════════');
 });
 
